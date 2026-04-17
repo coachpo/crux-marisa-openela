@@ -20,6 +20,7 @@
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 
 #include "crux-sm8150.dtsi"
+#include "crux-audio-overlay.dtsi"
 #include "sdx5xm-external-soc.dtsi"
 #include "sm8150-sdx50m.dtsi"
 
