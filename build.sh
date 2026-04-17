@@ -1,6 +1,24 @@
+VARIANT="${1:-crux}"
 DATE=$(date +"%Y%m%d")
+
+case "$VARIANT" in
+    crux)
+        DEFCONFIG=crux_defconfig
+        OUT_DIR=out/crux
+        KERNEL_NAME=Evasi0nKernel-crux-"$DATE"
+        ;;
+    cepheus)
+        DEFCONFIG=cepheus_defconfig
+        OUT_DIR=out/cepheus
+        KERNEL_NAME=Evasi0nKernel-cepheus-"$DATE"
+        ;;
+    *)
+        echo 'Usage: ./build.sh [crux|cepheus]' >&2
+        exit 2
+        ;;
+    esac
+
 VERSION=$(git rev-parse --short HEAD)
-KERNEL_NAME=Evasi0nKernel-cepheus-"$DATE"
 
 export KERNEL_PATH=$PWD
 export ANYKERNEL_PATH=~/Anykernel3
@@ -24,28 +42,27 @@ git clone https://github.com/osm0sis/AnyKernel3 $ANYKERNEL_PATH
 sh -c "$(curl -sSL https://github.com/akhilnarang/scripts/raw/master/setup/android_build_env.sh/)"
 
 echo "=========================Clean========================="
-rm -rf $KERNEL_PATH/out/ *.zip
-make mrproper && git reset --hard HEAD
+rm -rf "$KERNEL_PATH/$OUT_DIR" "$KERNEL_PATH"/*.zip
+make mrproper
 
 echo "=========================Build========================="
-make O=out cepheus_defconfig
-make O=out -j12 | tee out/kernel.log
+make O="$OUT_DIR" "$DEFCONFIG"
+make O="$OUT_DIR" -j24 | tee "$OUT_DIR/kernel.log"
 
-if [ ! -e $KERNEL_PATH/out/arch/arm64/boot/Image.gz-dtb ]; then
+if [ ! -e "$KERNEL_PATH/$OUT_DIR/arch/arm64/boot/Image.gz-dtb" ]; then
     echo "=======================FAILED!!!======================="
     rm -rf $ANYKERNEL_PATH
     make mrproper>/dev/null 2>&1
-    git reset --hard HEAD 2>&1
     exit -1>/dev/null 2>&1
 fi
 
 echo "=========================Patch========================="
 rm -r $ANYKERNEL_PATH/modules $ANYKERNEL_PATH/patch $ANYKERNEL_PATH/ramdisk
 cp $KERNEL_PATH/anykernel.sh $ANYKERNEL_PATH/
-cp $KERNEL_PATH/out/arch/arm64/boot/Image.gz-dtb $ANYKERNEL_PATH/
+cp "$KERNEL_PATH/$OUT_DIR/arch/arm64/boot/Image.gz-dtb" "$ANYKERNEL_PATH/"
 cd $ANYKERNEL_PATH
 zip -r $KERNEL_NAME *
-mv $KERNEL_NAME.zip $KERNEL_PATH/out/
+mv $KERNEL_NAME.zip "$KERNEL_PATH/$OUT_DIR/"
 cd $KERNEL_PATH
 #rm -rf $CLANG_PATH
 rm -rf $ANYKERNEL_PATH
