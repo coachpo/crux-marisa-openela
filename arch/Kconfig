@@ -237,6 +237,13 @@ config ARCH_HAS_FORTIFY_SOURCE
 config ARCH_HAS_SET_MEMORY
 	bool
 
+config ARCH_HAS_CPU_FINALIZE_INIT
+	bool
+
+# Select if arch has all set_direct_map_invalid/default() functions
+config ARCH_HAS_SET_DIRECT_MAP
+	bool
+
 # Select if arch init_task initializer is different to init/init_task.c
 config ARCH_INIT_TASK
        bool
@@ -604,7 +611,7 @@ config THIN_ARCHIVES
 	  instead of ld -r to create the built-in.o files.
 
 config LD_DEAD_CODE_DATA_ELIMINATION
-	bool "Eliminate dead code & data sections at link time"
+	bool
 	help
 	  Select this if the architecture wants to do dead code and
 	  data elimination with the linker by compiling with
@@ -1077,16 +1084,6 @@ config STRICT_MODULE_RWX
 	  and non-text memory will be made non-executable. This provides
 	  protection against certain security exploits (e.g. writing to text)
 
-config ARCH_HAS_REFCOUNT_FULL
-	bool
-	select ARCH_HAS_REFCOUNT
-	help
-	  An architecture selects this when the optimized refcount_t
-	  implementation it provides covers all the cases that
-	  CONFIG_REFCOUNT_FULL covers as well, in which case it makes no
-	  sense to even offer CONFIG_REFCOUNT_FULL as a user selectable
-	  option.
-
 config ARCH_HAS_REFCOUNT
 	bool
 	help
@@ -1100,7 +1097,7 @@ config ARCH_HAS_REFCOUNT
 	  against bugs in reference counts.
 
 config REFCOUNT_FULL
-	bool "Perform full reference count validation at the expense of speed" if !ARCH_HAS_REFCOUNT_FULL
+	bool "Perform full reference count validation at the expense of speed"
 	help
 	  Enabling this switches the refcounting infrastructure from a fast
 	  unchecked atomic_t implementation to a fully state checked
@@ -1141,5 +1138,13 @@ config RELR
 	  format. Requires a compatible linker (LLD supports this feature), as
 	  well as compatible NM and OBJCOPY utilities (llvm-nm and llvm-objcopy
 	  are compatible).
+
+config ARCH_HAS_NONLEAF_PMD_YOUNG
+	bool
+	help
+	  Architectures that select this option are capable of setting the
+	  accessed bit in non-leaf PMD entries when using them as part of linear
+	  address translations. Page table walkers that clear the accessed bit
+	  may use this capability to reduce their search space.
 
 source "kernel/gcov/Kconfig"

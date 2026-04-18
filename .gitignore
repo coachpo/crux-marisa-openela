@@ -54,8 +54,6 @@ modules.builtin
 /vmlinuz
 /System.map
 /Module.markers
-/out/
-/*.zip
 
 #
 # RPM spec file (make rpm-pkg)
@@ -106,7 +104,6 @@ GTAGS
 # id-utils files
 ID
 
-*.orig
 *~
 \#*#
 

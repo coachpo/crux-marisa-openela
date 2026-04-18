@@ -63,17 +63,6 @@ static DEFINE_MUTEX(vdd_class_list_lock);
  */
 static LIST_HEAD(clk_rate_change_list);
 
-static struct hlist_head *all_lists[] = {
-	&clk_root_list,
-	&clk_orphan_list,
-	NULL,
-};
-
-static struct hlist_head *orphan_list[] = {
-	&clk_orphan_list,
-	NULL,
-};
-
 /***    private data structures    ***/
 
 struct clk_core {
@@ -1197,6 +1186,8 @@ static int clk_core_round_rate_nolock(struct clk_core *core,
 {
 	struct clk_core *parent;
 	long rate;
+
+	lockdep_assert_held(&prepare_lock);
 
 	if (!core)
 		return 0;
@@ -2701,6 +2692,17 @@ static int inited = 0;
 static u32 debug_suspend;
 static DEFINE_MUTEX(clk_debug_lock);
 static HLIST_HEAD(clk_debug_list);
+
+static struct hlist_head *all_lists[] = {
+	&clk_root_list,
+	&clk_orphan_list,
+	NULL,
+};
+
+static struct hlist_head *orphan_list[] = {
+	&clk_orphan_list,
+	NULL,
+};
 
 static void clk_state_subtree(struct clk_core *c)
 {

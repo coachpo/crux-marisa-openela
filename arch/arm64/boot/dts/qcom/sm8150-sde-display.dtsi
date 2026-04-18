@@ -36,8 +36,8 @@
 #include "dsi-panel-samsung-fhd-ea8076-f1p2-cmd.dtsi"
 #include "dsi-panel-samsung-fhd-ea8076-f1p2-2-cmd.dtsi"
 #include "dsi-panel-samsung-fhd-ea8076-f1mp-cmd.dtsi"
+#include "dsi-panel-samsung-fhd-ea8076-f1s-cmd.dtsi"
 #include "dsi-panel-nt36850-truly-dualmipi-wqhd-cmd.dtsi"
-#include "dsi-panel-rm69299-visionox-amoled-fhd-plus-video.dtsi"
 #include "dsi-panel-ss-fhd-ea8076-cmd.dtsi"
 #include "dsi-panel-ss-fhd-ea8076-global-cmd.dtsi"
 #include <dt-bindings/clock/mdss-10nm-pll-clk.h>
@@ -475,18 +475,7 @@
 		qcom,dsi-panel = <&dsi_sim_sec_hd_cmd>;
 	};
 
-	dsi_rm69299_visionox_amoled_vid_display: qcom,dsi-display@23 {
-		label = "dsi_rm69299_visionox_amoled_vid_display";
-		qcom,display-type = "primary";
-
-		qcom,dsi-ctrl-num = <0>;
-		qcom,dsi-phy-num = <0>;
-		qcom,dsi-select-clocks = "mux_byte_clk0", "mux_pixel_clk0";
-
-		qcom,dsi-panel = <&dsi_rm69299_visionox_amoled_video>;
-	};
-
-	dsi_samsung_fhd_ea8076_cmd_display: qcom,dsi-display@24 {
+	dsi_samsung_fhd_ea8076_cmd_display: qcom,dsi-display@23 {
 		label = "dsi_samsung_fhd_ea8076_cmd_display";
 		qcom,display-type = "primary";
 
@@ -497,7 +486,7 @@
 		qcom,dsi-panel = <&dsi_samsung_fhd_ea8076_cmd>;
 	};
 
-	dsi_samsung_fhd_ea8076_f1_cmd_display: qcom,dsi-display@25 {
+	dsi_samsung_fhd_ea8076_f1_cmd_display: qcom,dsi-display@24 {
 		label = "dsi_samsung_fhd_ea8076_f1_cmd_display";
 		qcom,display-type = "primary";
 
@@ -508,7 +497,7 @@
 		qcom,dsi-panel = <&dsi_samsung_fhd_ea8076_f1_cmd>;
 	};
 
-	dsi_samsung_fhd_ea8076_f1mp_cmd_display: qcom,dsi-display@26 {
+	dsi_samsung_fhd_ea8076_f1mp_cmd_display: qcom,dsi-display@25 {
 		label = "dsi_samsung_fhd_ea8076_f1mp_cmd_display";
 		qcom,display-type = "primary";
 
@@ -519,7 +508,7 @@
 		qcom,dsi-panel = <&dsi_samsung_fhd_ea8076_f1mp_cmd>;
 	};
 
-	dsi_samsung_fhd_ea8076_f1p2_2_cmd_display: qcom,dsi-display@27 {
+	dsi_samsung_fhd_ea8076_f1p2_2_cmd_display: qcom,dsi-display@26 {
 		label = "dsi_samsung_fhd_ea8076_f1p2_2_cmd_display";
 		qcom,display-type = "primary";
 
@@ -530,7 +519,7 @@
 		qcom,dsi-panel = <&dsi_samsung_fhd_ea8076_f1p2_2_cmd>;
 	};
 
-	dsi_samsung_fhd_ea8076_f1p2_cmd_display: qcom,dsi-display@28 {
+	dsi_samsung_fhd_ea8076_f1p2_cmd_display: qcom,dsi-display@27 {
 		label = "dsi_samsung_fhd_ea8076_f1p2_cmd_display";
 		qcom,display-type = "primary";
 
@@ -541,7 +530,7 @@
 		qcom,dsi-panel = <&dsi_samsung_fhd_ea8076_f1p2_cmd>;
 	};
 
-	dsi_ss_fhd_ea8076_cmd_display: qcom,dsi-display@29 {
+	dsi_ss_fhd_ea8076_cmd_display: qcom,dsi-display@28 {
 
 		label = "dsi_ss_fhd_ea8076_cmd_display";
 		qcom,display-type = "primary";
@@ -553,7 +542,7 @@
 		qcom,dsi-panel = <&dsi_ss_fhd_ea8076_cmd>;
 	};
 
-	dsi_ss_fhd_ea8076_global_cmd_display: qcom,dsi-display@30 {
+	dsi_ss_fhd_ea8076_global_cmd_display: qcom,dsi-display@29 {
 
 		label = "dsi_ss_fhd_ea8076_global_cmd_display";
 		qcom,display-type = "primary";
@@ -563,6 +552,18 @@
 		qcom,dsi-select-clocks = "mux_byte_clk0", "mux_pixel_clk0";
 
 		qcom,dsi-panel = <&dsi_ss_fhd_ea8076_global_cmd>;
+	};
+
+	dsi_samsung_fhd_ea8076_f1s_cmd_display: qcom,dsi-display@30 {
+
+		label = "dsi_samsung_fhd_ea8076_f1s_cmd_display";
+		qcom,display-type = "primary";
+
+		qcom,dsi-ctrl-num = <0>;
+		qcom,dsi-phy-num = <0>;
+		qcom,dsi-select-clocks = "mux_byte_clk0", "mux_pixel_clk0";
+
+		qcom,dsi-panel = <&dsi_samsung_fhd_ea8076_f1s_cmd>;
 	};
 
 	sde_dsi: qcom,dsi-display-primary {
@@ -618,7 +619,6 @@
 			&dsi_nt35695b_truly_fhd_video_display
 			&dsi_sw43404_amoled_video_display
 			&dsi_sw43404_amoled_fhd_plus_cmd_display
-			&dsi_rm69299_visionox_amoled_vid_display
 			&dsi_dual_nt36850_truly_cmd_display
 			&dsi_samsung_fhd_ea8076_cmd_display
 			&dsi_samsung_fhd_ea8076_f1_cmd_display
@@ -626,7 +626,8 @@
 			&dsi_samsung_fhd_ea8076_f1p2_2_cmd_display
 			&dsi_samsung_fhd_ea8076_f1p2_cmd_display
 			&dsi_ss_fhd_ea8076_cmd_display
-			&dsi_ss_fhd_ea8076_global_cmd_display>;
+			&dsi_ss_fhd_ea8076_global_cmd_display
+			&dsi_samsung_fhd_ea8076_f1s_cmd_display>;
 	};
 
 	sde_dsi1: qcom,dsi-display-secondary {
@@ -736,19 +737,6 @@
 				07 05 02 04 00 18 17];
 			qcom,display-topology = <2 0 2>,
 						<1 0 2>;
-			qcom,default-topology-index = <0>;
-		};
-	};
-};
-
-&dsi_rm69299_visionox_amoled_video {
-	qcom,mdss-dsi-t-clk-post = <0x0E>;
-	qcom,mdss-dsi-t-clk-pre = <0x31>;
-	qcom,mdss-dsi-display-timings {
-		timing@0{
-			qcom,mdss-dsi-panel-phy-timings = [00 20 08 08 24 23 08
-				08 05 02 04 00 18 17];
-			qcom,display-topology = <1 0 1>;
 			qcom,default-topology-index = <0>;
 		};
 	};
@@ -1115,6 +1103,24 @@
 			qcom,display-topology = <1 0 1>;
 			qcom,default-topology-index = <0>;
 		};
+		timing@1{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
+		timing@2{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
+		timing@3{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
 	};
 };
 
@@ -1125,6 +1131,24 @@
 		timing@0{
 			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 25 09
                             0A 06 03 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
+		timing@1{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
+		timing@2{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
+		timing@3{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
 			qcom,display-topology = <1 0 1>;
 			qcom,default-topology-index = <0>;
 		};
@@ -1141,6 +1165,24 @@
 			qcom,display-topology = <1 0 1>;
 			qcom,default-topology-index = <0>;
 		};
+		timing@1{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
+		timing@2{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
+		timing@3{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
 	};
 };
 
@@ -1151,6 +1193,24 @@
 		timing@0{
 			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 25 09
 							0A 06 03 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
+		timing@1{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
+		timing@2{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
+		timing@3{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
 			qcom,display-topology = <1 0 1>;
 			qcom,default-topology-index = <0>;
 		};
@@ -1167,6 +1227,24 @@
 			qcom,display-topology = <1 0 1>;
 			qcom,default-topology-index = <0>;
 		};
+		timing@1{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
+		timing@2{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
+		timing@3{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
 	};
 };
 
@@ -1180,6 +1258,24 @@
 			qcom,display-topology = <1 0 1>;
 			qcom,default-topology-index = <0>;
 		};
+		timing@1{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
+		timing@2{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
+		timing@3{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
 	};
 };
 
@@ -1190,6 +1286,56 @@
 		timing@0{
 			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
 				0A 06 03 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
+		timing@1{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
+		timing@2{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
+		timing@3{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
+	};
+};
+
+&dsi_samsung_fhd_ea8076_f1s_cmd {
+	qcom,mdss-dsi-t-clk-post = <0x1A>;
+	qcom,mdss-dsi-t-clk-pre = <0x1E>;
+	qcom,mdss-dsi-clk-strength = <0xFF>;
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
+		timing@1{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
+		timing@2{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+		};
+		timing@3{
+			qcom,mdss-dsi-panel-phy-timings = [00 24 0A 0A 26 24 0A
+				0A 06 02 04 00 1E 1A];
 			qcom,display-topology = <1 0 1>;
 			qcom,default-topology-index = <0>;
 		};

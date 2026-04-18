@@ -10,7 +10,7 @@ else
   CC_ARM32 := $(CROSS_COMPILE_COMPAT)$(cc-name)
 endif
 
-ifneq ($(LLVM),)
+ifeq ($(cc-name),clang)
 LD_COMPAT ?= $(LD)
 else
 LD_COMPAT ?= $(CROSS_COMPILE_COMPAT)ld
@@ -41,9 +41,6 @@ VDSO_CAFLAGS := $(VDSO_CPPFLAGS)
 VDSO_CAFLAGS += $(call cc32-option,-fno-PIE)
 ifdef CONFIG_DEBUG_INFO
 VDSO_CAFLAGS += -g
-endif
-ifeq ($(shell $(CONFIG_SHELL) $(srctree)/scripts/gcc-goto.sh $(CC_ARM32)), y)
-VDSO_CAFLAGS += -DCC_HAVE_ASM_GOTO
 endif
 
 # From arm Makefile

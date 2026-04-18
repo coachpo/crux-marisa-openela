@@ -72,6 +72,10 @@
 #include <linux/security.h>
 #include <linux/spinlock.h>
 
+#ifdef CONFIG_MILLET
+#include <linux/millet.h>
+#endif
+
 #include <uapi/linux/android/binder.h>
 #include <uapi/linux/sched/types.h>
 #include "binder_alloc.h"
@@ -463,18 +467,8 @@ struct binder_priority {
  *                        (protected by binder_deferred_lock)
  * @deferred_work:        bitmap of deferred work to perform
  *                        (protected by binder_deferred_lock)
- * @outstanding_txns:     number of transactions to be transmitted before
- *                        processes in freeze_wait are woken up
- *                        (protected by @inner_lock)
  * @is_dead:              process is dead and awaiting free
  *                        when outstanding transactions are cleaned up
- *                        (protected by @inner_lock)
- * @sync_recv:            process received sync transactions since last frozen
- *                        (protected by @inner_lock)
- * @async_recv:           process received async transactions since last frozen
- *                        (protected by @inner_lock)
- * @freeze_wait:          waitqueue of processes waiting for all outstanding
- *                        transactions to be processed
  *                        (protected by @inner_lock)
  * @todo:                 list of work for this process
  *                        (protected by @inner_lock)
@@ -520,17 +514,12 @@ struct binder_proc {
 	const struct cred *cred;
 	struct hlist_node deferred_work_node;
 	int deferred_work;
-	int outstanding_txns;
 	bool is_dead;
-	bool is_frozen;
-	bool sync_recv;
-	bool async_recv;
-	wait_queue_head_t freeze_wait;
 
 	struct list_head todo;
 	struct binder_stats stats;
 	struct list_head delivered_death;
-	int max_threads;
+	u32 max_threads;
 	int requested_threads;
 	int requested_threads_started;
 	atomic_t tmp_ref;
@@ -859,6 +848,16 @@ binder_enqueue_thread_work_ilocked(struct binder_thread *thread,
 				   struct binder_work *work)
 {
 	binder_enqueue_work_ilocked(work, &thread->todo);
+
+	/* (e)poll-based threads require an explicit wakeup signal when
+	 * queuing their own work; they rely on these events to consume
+	 * messages without I/O block. Without it, threads risk waiting
+	 * indefinitely without handling the work.
+	 */
+	if (thread->looper & BINDER_LOOPER_STATE_POLL &&
+	    thread->pid == current->pid && !thread->process_todo)
+		wake_up_interruptible_sync(&thread->wait);
+
 	thread->process_todo = true;
 }
 
@@ -1001,9 +1000,7 @@ static bool binder_has_work(struct binder_thread *thread, bool do_proc_work)
 static bool binder_available_for_proc_work_ilocked(struct binder_thread *thread)
 {
 	return !thread->transaction_stack &&
-		binder_worklist_empty_ilocked(&thread->todo) &&
-		(thread->looper & (BINDER_LOOPER_STATE_ENTERED |
-				   BINDER_LOOPER_STATE_REGISTERED));
+		binder_worklist_empty_ilocked(&thread->todo);
 }
 
 static void binder_wakeup_poll_threads_ilocked(struct binder_proc *proc,
@@ -2108,10 +2105,6 @@ static void binder_free_transaction(struct binder_transaction *t)
 		spin_unlock(&t->lock);
 
 		binder_inner_proc_lock(target_proc);
-		target_proc->outstanding_txns--;
-		BUG_ON(target_proc->outstanding_txns < 0);
-		if (!target_proc->outstanding_txns && target_proc->is_frozen)
-			wake_up_interruptible_all(&target_proc->freeze_wait);
 		if (t->buffer)
 			t->buffer->transaction = NULL;
 		binder_inner_proc_unlock(target_proc);
@@ -2865,11 +2858,10 @@ static int binder_fixup_parent(struct binder_transaction *t,
  * If the @thread parameter is not NULL, the transaction is always queued
  * to the waitlist of that specific thread.
  *
- * Return:	0 if the transaction was successfully queued
- *		BR_DEAD_REPLY if the target process or thread is dead
- *		BR_FROZEN_REPLY if the target process or thread is frozen
+ * Return:	true if the transactions was successfully queued
+ *		false if the target process or thread is dead
  */
-static int binder_proc_transaction(struct binder_transaction *t,
+static bool binder_proc_transaction(struct binder_transaction *t,
 				    struct binder_proc *proc,
 				    struct binder_thread *thread)
 {
@@ -2893,41 +2885,30 @@ static int binder_proc_transaction(struct binder_transaction *t,
 	}
 
 	binder_inner_proc_lock(proc);
-	if (proc->is_frozen) {
-		proc->sync_recv |= !oneway;
-		proc->async_recv |= oneway;
-	}
 
-	if ((proc->is_frozen && !oneway) || proc->is_dead ||
-			(thread && thread->is_dead)) {
-		bool proc_is_dead = proc->is_dead
-			|| (thread && thread->is_dead);
+	if (proc->is_dead || (thread && thread->is_dead)) {
 		binder_inner_proc_unlock(proc);
 		binder_node_unlock(node);
-		return proc_is_dead ? BR_DEAD_REPLY : BR_FROZEN_REPLY;
+		return false;
 	}
 
 	if (!thread && !pending_async)
 		thread = binder_select_thread_ilocked(proc);
 
-	if (thread) {
-		binder_transaction_priority(thread->task, t, node_prio,
-					    node->inherit_rt);
+	if (thread)
 		binder_enqueue_thread_work_ilocked(thread, &t->work);
-	} else if (!pending_async) {
+	else if (!pending_async)
 		binder_enqueue_work_ilocked(&t->work, &proc->todo);
-	} else {
+	else
 		binder_enqueue_work_ilocked(&t->work, &node->async_todo);
-	}
 
 	if (!pending_async)
 		binder_wakeup_thread_ilocked(proc, thread, !oneway /* sync */);
 
-	proc->outstanding_txns++;
 	binder_inner_proc_unlock(proc);
 	binder_node_unlock(node);
 
-	return 0;
+	return true;
 }
 
 /**
@@ -3062,6 +3043,22 @@ static void binder_transaction(struct binder_proc *proc,
 		target_proc = target_thread->proc;
 		atomic_inc(&target_proc->tmp_ref);
 		binder_inner_proc_unlock(target_thread->proc);
+#ifdef CONFIG_MILLET
+		if (target_proc
+			&& target_proc->tsk
+			&& (task_uid(target_proc->tsk).val <= frozen_uid_min)) {
+			struct millet_data data;
+
+			memset(&data, 0, sizeof(struct millet_data));
+			data.pri[0] =  BINDER_REPLY;
+			data.mod.k_priv.binder.trans.src_task = proc->tsk;
+			data.mod.k_priv.binder.trans.caller_tid = thread->pid;
+			data.mod.k_priv.binder.trans.dst_task = target_proc->tsk;
+			data.mod.k_priv.binder.trans.tf_oneway = tr->flags & TF_ONE_WAY;
+			data.mod.k_priv.binder.trans.code = tr->code;
+			millet_sendmsg(BINDER_TYPE, target_proc->tsk, &data);
+		}
+#endif
 	} else {
 		if (tr->target.handle) {
 			struct binder_ref *ref;
@@ -3121,6 +3118,23 @@ static void binder_transaction(struct binder_proc *proc,
 			return_error_line = __LINE__;
 			goto err_invalid_target_handle;
 		}
+#ifdef CONFIG_MILLET
+		if (target_proc
+			&& target_proc->tsk
+			&& (task_uid(target_proc->tsk).val > 10000)
+			&& (proc->pid != target_proc->pid)) {
+			struct millet_data data;
+
+			memset(&data, 0, sizeof(struct millet_data));
+			data.pri[0] =  BINDER_TRANS;
+			data.mod.k_priv.binder.trans.src_task = proc->tsk;
+			data.mod.k_priv.binder.trans.caller_tid = thread->pid;
+			data.mod.k_priv.binder.trans.dst_task = target_proc->tsk;
+			data.mod.k_priv.binder.trans.tf_oneway = tr->flags & TF_ONE_WAY;
+			data.mod.k_priv.binder.trans.code = tr->code;
+			millet_sendmsg(BINDER_TYPE, target_proc->tsk, &data);
+		}
+#endif
 		binder_inner_proc_lock(proc);
 		if (!(tr->flags & TF_ONE_WAY) && thread->transaction_stack) {
 			struct binder_transaction *tmp;
@@ -3248,7 +3262,7 @@ static void binder_transaction(struct binder_proc *proc,
 
 	t->buffer = binder_alloc_new_buf(&target_proc->alloc, tr->data_size,
 		tr->offsets_size, extra_buffers_size,
-		!reply && (t->flags & TF_ONE_WAY), current->tgid);
+		!reply && (t->flags & TF_ONE_WAY));
 	if (IS_ERR(t->buffer)) {
 		/*
 		 * -ESRCH indicates VMA cleared. The target is dying.
@@ -3521,16 +3535,13 @@ static void binder_transaction(struct binder_proc *proc,
 	if (reply) {
 		binder_enqueue_thread_work(thread, tcomplete);
 		binder_inner_proc_lock(target_proc);
-		if (target_thread->is_dead || target_proc->is_frozen) {
-			return_error = target_thread->is_dead ?
-				BR_DEAD_REPLY : BR_FROZEN_REPLY;
+		if (target_thread->is_dead) {
 			binder_inner_proc_unlock(target_proc);
 			goto err_dead_proc_or_thread;
 		}
 		BUG_ON(t->buffer->async_transaction != 0);
 		binder_pop_transaction_ilocked(target_thread, in_reply_to);
 		binder_enqueue_thread_work_ilocked(target_thread, &t->work);
-		target_proc->outstanding_txns++;
 		binder_inner_proc_unlock(target_proc);
 		wake_up_interruptible_sync(&target_thread->wait);
 		binder_restore_priority(current, in_reply_to->saved_priority);
@@ -3550,9 +3561,7 @@ static void binder_transaction(struct binder_proc *proc,
 		t->from_parent = thread->transaction_stack;
 		thread->transaction_stack = t;
 		binder_inner_proc_unlock(proc);
-		return_error = binder_proc_transaction(t,
-				target_proc, target_thread);
-		if (return_error) {
+		if (!binder_proc_transaction(t, target_proc, target_thread)) {
 			binder_inner_proc_lock(proc);
 			binder_pop_transaction_ilocked(thread, t);
 			binder_inner_proc_unlock(proc);
@@ -3562,8 +3571,7 @@ static void binder_transaction(struct binder_proc *proc,
 		BUG_ON(target_node == NULL);
 		BUG_ON(t->buffer->async_transaction != 1);
 		binder_enqueue_thread_work(thread, tcomplete);
-		return_error = binder_proc_transaction(t, target_proc, NULL);
-		if (return_error)
+		if (!binder_proc_transaction(t, target_proc, NULL))
 			goto err_dead_proc_or_thread;
 	}
 	if (target_thread)
@@ -3580,6 +3588,7 @@ static void binder_transaction(struct binder_proc *proc,
 	return;
 
 err_dead_proc_or_thread:
+	return_error = BR_DEAD_REPLY;
 	return_error_line = __LINE__;
 	binder_dequeue_work(proc, tcomplete);
 err_translate_failed:
@@ -4168,6 +4177,10 @@ static int binder_wait_for_work(struct binder_thread *thread,
 {
 	DEFINE_WAIT(wait);
 	struct binder_proc *proc = thread->proc;
+#ifdef CONFIG_MILLET
+	struct binder_transaction *t;
+	struct binder_proc *target_proc;
+#endif
 	int ret = 0;
 
 	freezer_do_not_count();
@@ -4176,6 +4189,29 @@ static int binder_wait_for_work(struct binder_thread *thread,
 		prepare_to_wait(&thread->wait, &wait, TASK_INTERRUPTIBLE);
 		if (binder_has_work_ilocked(thread, do_proc_work))
 			break;
+#ifdef CONFIG_MILLET
+		target_proc = NULL;
+		t = thread->transaction_stack;
+		if (t)
+			target_proc = t->to_proc;
+
+		if (target_proc
+			&& (!(t->flags & TF_ONE_WAY))
+			&& target_proc->tsk
+			&& (task_uid(target_proc->tsk).val <= frozen_uid_min)
+			&& (proc->pid != target_proc->pid)) {
+			struct millet_data data;
+
+			memset(&data, 0, sizeof(struct millet_data));
+			data.pri[0] =  BINDER_THREAD_HAS_WORK;
+			data.mod.k_priv.binder.trans.src_task = proc->tsk;
+			data.mod.k_priv.binder.trans.caller_tid = thread->pid;
+			data.mod.k_priv.binder.trans.dst_task = target_proc->tsk;
+			data.mod.k_priv.binder.trans.tf_oneway = t->flags & TF_ONE_WAY;
+			data.mod.k_priv.binder.trans.code = t->code;
+			millet_sendmsg(BINDER_TYPE, target_proc->tsk, &data);
+		}
+#endif
 		if (do_proc_work)
 			list_add(&thread->waiting_thread_node,
 				 &proc->waiting_threads);
@@ -4184,7 +4220,7 @@ static int binder_wait_for_work(struct binder_thread *thread,
 		binder_inner_proc_lock(proc);
 		list_del_init(&thread->waiting_thread_node);
 		if (signal_pending(current)) {
-			ret = -EINTR;
+			ret = -ERESTARTSYS;
 			break;
 		}
 	}
@@ -4688,7 +4724,6 @@ static void binder_free_proc(struct binder_proc *proc)
 
 	BUG_ON(!list_empty(&proc->todo));
 	BUG_ON(!list_empty(&proc->delivered_death));
-	WARN_ON(proc->outstanding_txns);
 	device = container_of(proc->context, struct binder_device, context);
 	if (refcount_dec_and_test(&device->ref)) {
 		kfree(proc->context->name);
@@ -4750,7 +4785,6 @@ static int binder_thread_release(struct binder_proc *proc,
 			     (t->to_thread == thread) ? "in" : "out");
 
 		if (t->to_thread == thread) {
-			t->to_proc->outstanding_txns--;
 			t->to_proc = NULL;
 			t->to_thread = NULL;
 			if (t->buffer) {
@@ -4994,37 +5028,6 @@ static int binder_ioctl_get_node_debug_info(struct binder_proc *proc,
 	return 0;
 }
 
-static int binder_ioctl_get_freezer_info(
-				struct binder_frozen_status_info *info)
-{
-	struct binder_proc *target_proc;
-	bool found = false;
-
-	mutex_lock(&binder_procs_lock);
-	hlist_for_each_entry(target_proc, &binder_procs, proc_node) {
-		if (target_proc->pid == info->pid) {
-			found = true;
-			binder_inner_proc_lock(target_proc);
-			atomic_inc(&target_proc->tmp_ref);
-			binder_inner_proc_unlock(target_proc);
-			break;
-		}
-	}
-	mutex_unlock(&binder_procs_lock);
-
-	if (!found)
-		return -EINVAL;
-
-	binder_inner_proc_lock(target_proc);
-	info->sync_recv = target_proc->sync_recv;
-	info->async_recv = target_proc->async_recv;
-	binder_inner_proc_unlock(target_proc);
-
-	binder_proc_dec_tmpref(target_proc);
-
-	return 0;
-}
-
 static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	int ret;
@@ -5057,7 +5060,7 @@ static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			goto err;
 		break;
 	case BINDER_SET_MAX_THREADS: {
-		int max_threads;
+		u32 max_threads;
 
 		if (copy_from_user(&max_threads, ubuf,
 				   sizeof(max_threads))) {
@@ -5134,85 +5137,6 @@ static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 
 		ret = binder_ioctl_get_node_debug_info(proc, &info);
-		if (ret < 0)
-			goto err;
-
-		if (copy_to_user(ubuf, &info, sizeof(info))) {
-			ret = -EFAULT;
-			goto err;
-		}
-		break;
-	}
-	case BINDER_FREEZE: {
-		struct binder_freeze_info info;
-		struct binder_proc *target_proc;
-		bool found = false;
-
-		if (copy_from_user(&info, ubuf, sizeof(info))) {
-			ret = -EFAULT;
-			goto err;
-		}
-		mutex_lock(&binder_procs_lock);
-		hlist_for_each_entry(target_proc, &binder_procs, proc_node) {
-			if (target_proc->pid == info.pid) {
-				found = true;
-				binder_inner_proc_lock(target_proc);
-				atomic_inc(&target_proc->tmp_ref);
-				binder_inner_proc_unlock(target_proc);
-				break;
-			}
-		}
-		mutex_unlock(&binder_procs_lock);
-		if (!found) {
-			ret = -EINVAL;
-			goto err;
-		}
-		if (!info.enable) {
-			binder_inner_proc_lock(target_proc);
-			target_proc->sync_recv = false;
-			target_proc->async_recv = false;
-			target_proc->is_frozen = false;
-			binder_inner_proc_unlock(target_proc);
-			binder_proc_dec_tmpref(target_proc);
-			break;
-		}
-		/*
-		 * Freezing the target. Prevent new transactions by
-		 * setting frozen state. If timeout specified, wait
-		 * for transactions to drain.
-		 */
-		binder_inner_proc_lock(target_proc);
-		target_proc->sync_recv = false;
-		target_proc->async_recv = false;
-		target_proc->is_frozen = true;
-		binder_inner_proc_unlock(target_proc);
-		if (info.timeout_ms > 0)
-			ret = wait_event_interruptible_timeout(
-				target_proc->freeze_wait,
-				(!target_proc->outstanding_txns),
-				msecs_to_jiffies(info.timeout_ms));
-		if (!ret && target_proc->outstanding_txns) {
-			ret = -EAGAIN;
-		}
-		if (ret < 0) {
-			binder_inner_proc_lock(target_proc);
-			target_proc->is_frozen = false;
-			binder_inner_proc_unlock(target_proc);
-		}
-		binder_proc_dec_tmpref(target_proc);
-		if (ret < 0)
-			goto err;
-		break;
-	}
-	case BINDER_GET_FROZEN_INFO: {
-		struct binder_frozen_status_info info;
-
-		if (copy_from_user(&info, ubuf, sizeof(info))) {
-			ret = -EFAULT;
-			goto err;
-		}
-
-		ret = binder_ioctl_get_freezer_info(&info);
 		if (ret < 0)
 			goto err;
 
@@ -5337,7 +5261,6 @@ static int binder_open(struct inode *nodp, struct file *filp)
 	mutex_init(&proc->files_lock);
 	proc->cred = get_cred(filp->f_cred);
 	INIT_LIST_HEAD(&proc->todo);
-	init_waitqueue_head(&proc->freeze_wait);
 	if (binder_supported_policy(current->policy)) {
 		proc->default_priority.sched_policy = current->policy;
 		proc->default_priority.prio = current->normal_prio;
@@ -5417,6 +5340,154 @@ static int binder_open(struct inode *nodp, struct file *filp)
 
 	return 0;
 }
+
+#ifdef CONFIG_MILLET
+static enum BINDER_STAT query_binder_stats(struct binder_proc *proc)
+{
+	struct rb_node *n = NULL;
+	struct binder_thread *thread = NULL;
+	struct millet_data data;
+	struct task_struct *tsk;
+	int uid = 0;
+
+	if (proc->tsk)
+		uid = task_uid(proc->tsk).val;
+	data.uid = uid;
+
+	binder_inner_proc_lock(proc);
+	if (proc->tsk && !binder_worklist_empty_ilocked(&proc->todo)) {
+		data.mod.k_priv.binder.stat.task = proc->tsk;
+		data.mod.k_priv.binder.stat.pid = task_pid_nr(proc->tsk);
+		data.mod.k_priv.binder.stat.reason = BINDER_PROC_IN_BUSY;
+		goto busy;
+	}
+
+	for (n = rb_first(&proc->threads); n != NULL; n = rb_next(n)) {
+		thread = rb_entry(n, struct binder_thread, rb_node);
+		if (!thread->task)
+			continue;
+
+		if (!binder_worklist_empty_ilocked(&thread->todo)) {
+			data.mod.k_priv.binder.stat.task = thread->task;
+			data.mod.k_priv.binder.stat.tid = thread->pid;
+			data.mod.k_priv.binder.stat.pid = task_tgid_nr(thread->task);
+			data.mod.k_priv.binder.stat.reason = BINDER_THREAD_IN_BUSY;
+			goto busy;
+		}
+
+		if (!thread->transaction_stack)
+			continue;
+
+		spin_lock(&thread->transaction_stack->lock);
+		if (thread->transaction_stack->to_thread == thread) {
+			data.mod.k_priv.binder.stat.task = thread->task;
+			data.mod.k_priv.binder.stat.tid = thread->pid;
+			data.mod.k_priv.binder.stat.pid = task_tgid_nr(thread->task);
+			data.mod.k_priv.binder.stat.reason = BINDER_IN_TRANSACTION;
+			spin_unlock(&thread->transaction_stack->lock);
+			goto busy;
+		}
+		spin_unlock(&thread->transaction_stack->lock);
+	}
+
+	binder_inner_proc_unlock(proc);
+	return BINDER_IN_IDLE;
+busy:
+	tsk = data.mod.k_priv.binder.stat.task;
+	binder_inner_proc_unlock(proc);
+	millet_sendmsg(BINDER_ST_TYPE, tsk, &data);
+	return data.mod.k_priv.binder.stat.reason;
+}
+
+static void binder_recv_hook(void *data, unsigned int len)
+{
+	struct millet_userconf *payload = (struct millet_userconf *)data;
+	int uid = payload->mod.u_priv.binder_st.uid;
+	struct binder_proc *proc;
+	bool idle_f = true;
+	struct millet_data sdata;
+
+	mutex_lock(&binder_procs_lock);
+	hlist_for_each_entry(proc, &binder_procs, proc_node) {
+		if (proc != NULL && proc->tsk
+			&& (task_uid(proc->tsk).val == uid)) {
+			if (query_binder_stats(proc) != BINDER_IN_IDLE)
+				idle_f = false;
+		}
+	}
+
+	sdata.mod.k_priv.binder.stat.task = current;
+
+	if (idle_f)
+		sdata.mod.k_priv.binder.stat.reason = BINDER_IN_IDLE;
+	else
+		sdata.mod.k_priv.binder.stat.reason = BINDER_IN_BUSY;
+
+	sdata.uid = uid;
+	millet_sendmsg(BINDER_ST_TYPE, current, &sdata);
+	mutex_unlock(&binder_procs_lock);
+}
+
+static int binder_sendmsg(struct task_struct *tsk,
+		struct millet_data *data, struct millet_sock *sk)
+{
+	int ret = 0;
+	struct task_struct *src_task;
+	struct task_struct *dst_task;
+
+	if (!sk || !data || !tsk) {
+		pr_err("%s input invalid\n", __FUNCTION__);
+		return RET_ERR;
+	}
+
+	data->msg_type = MSG_TO_USER;
+	data->owner = BINDER_TYPE;
+	src_task = (struct task_struct *)data->mod.k_priv.binder.trans.src_task;
+	data->mod.k_priv.binder.trans.caller_pid = task_pid_nr(src_task);
+	data->mod.k_priv.binder.trans.caller_uid = task_uid(src_task).val;
+	dst_task = (struct task_struct *)data->mod.k_priv.binder.trans.dst_task;
+	data->mod.k_priv.binder.trans.dst_pid = task_pid_nr(dst_task);
+	data->uid = task_uid(dst_task).val;
+
+	if (frozen_task_group(tsk))
+		ret = millet_sendto_user(tsk, data, sk);
+
+	return ret;
+}
+
+static void binder_init_millet(struct millet_sock *sk)
+{
+	if (sk)
+		sk->mod[BINDER_TYPE].monitor = BINDER_TYPE;
+}
+
+static int binder_st_sendmsg(struct task_struct *tsk,
+		struct millet_data *data, struct millet_sock *sk)
+
+{
+	int ret = RET_OK;
+	struct task_struct *task_node;
+
+	if (!sk || !data || !tsk) {
+		pr_err("%s input invalid\n", __FUNCTION__);
+		return RET_ERR;
+	}
+
+	task_node = (struct task_struct *)(data->mod.k_priv.binder.stat.task);
+	data->msg_type = MSG_TO_USER;
+	data->owner = BINDER_ST_TYPE;
+	//data->uid = task_uid(task_node).val;
+	ret = millet_sendto_user(tsk, data, sk);
+
+	return ret;
+}
+
+static void binder_st_init_millet(struct millet_sock *sk)
+{
+	if (sk)
+		sk->mod[BINDER_ST_TYPE].monitor = BINDER_TYPE;
+}
+#endif
 
 static int binder_flush(struct file *filp, fl_owner_t id)
 {
@@ -5559,9 +5630,6 @@ static void binder_deferred_release(struct binder_proc *proc)
 	atomic_inc(&proc->tmp_ref);
 
 	proc->is_dead = true;
-	proc->is_frozen = false;
-	proc->sync_recv = false;
-	proc->async_recv = false;
 	threads = 0;
 	active_transactions = 0;
 	while ((n = rb_first(&proc->threads))) {
@@ -6309,6 +6377,13 @@ static int __init binder_init(void)
 		}
 	}
 
+#ifdef CONFIG_MILLET
+	register_millet_hook(BINDER_TYPE, NULL,
+			binder_sendmsg, binder_init_millet);
+	register_millet_hook(BINDER_ST_TYPE, binder_recv_hook,
+			binder_st_sendmsg, binder_st_init_millet);
+#endif
+
 	ret = init_binderfs();
 	if (ret)
 		goto err_init_binder_device_failed;
@@ -6326,11 +6401,24 @@ err_init_binder_device_failed:
 
 err_alloc_device_names_failed:
 	debugfs_remove_recursive(binder_debugfs_dir_entry_root);
+	binder_alloc_shrinker_exit();
 
 	return ret;
 }
 
 device_initcall(binder_init);
+
+#ifdef CONFIG_MILLET
+struct task_struct *binder_buff_owner(struct binder_alloc *alloc)
+{
+	struct binder_proc *proc = NULL;
+	if (!alloc)
+		return NULL;
+
+	proc = container_of(alloc, struct binder_proc, alloc);
+	return proc->tsk;
+}
+#endif
 
 #define CREATE_TRACE_POINTS
 #include "binder_trace.h"

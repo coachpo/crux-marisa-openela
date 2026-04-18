@@ -595,6 +595,7 @@ size_t __must_check get_random_bytes_arch(void *buf, size_t len)
 }
 EXPORT_SYMBOL(get_random_bytes_arch);
 
+
 /**********************************************************************
  *
  * Entropy accumulation and extraction routines.
@@ -1178,6 +1179,7 @@ static void __cold try_to_generate_entropy(void)
 	mix_pool_bytes(&stack.entropy, sizeof(stack.entropy));
 }
 
+
 /**********************************************************************
  *
  * Userspace reader/writer interfaces.
@@ -1381,7 +1383,6 @@ const struct file_operations random_fops = {
 	.write_iter = random_write_iter,
 	.poll = random_poll,
 	.unlocked_ioctl = random_ioctl,
-	.compat_ioctl = compat_ptr_ioctl,
 	.fasync = random_fasync,
 	.llseek = noop_llseek,
 	.splice_read = generic_file_splice_read,
@@ -1392,7 +1393,6 @@ const struct file_operations urandom_fops = {
 	.read_iter = urandom_read_iter,
 	.write_iter = random_write_iter,
 	.unlocked_ioctl = random_ioctl,
-	.compat_ioctl = compat_ptr_ioctl,
 	.fasync = random_fasync,
 	.llseek = noop_llseek,
 	.splice_read = generic_file_splice_read,
